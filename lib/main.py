@@ -23,7 +23,7 @@ import numpy as np
 import argparse
 
 action_size = 1
-state_size = 1
+state_size = 3
 reward_size = 1
 nfp = 512
 nfe = 512
@@ -100,12 +100,14 @@ params_policy = init_params_policy({})
 params_envsim  = init_params_envsim({})
 
 env = gym.make('Pendulum-v0')
-intiial_state = env.reset()
+initial_state = env.reset().astype(np.float32)
 
-pction = theano.function([state, tparams_policy],[next_action])
-compute_action = theano.function([params_policy, state][action])
+state = T.vector()
+action = policy_network(params_policy, state)
+#action = theano.function([state, tparams_policy],[next_action])
+compute_action = theano.function([state], [action])
 
-def real_chain(params_policy, initial_state, num_steps):
+def real_chain(initial_state, num_steps):
 
     # sample action from the policy network
     # pass the action to the simulator network
@@ -113,10 +115,11 @@ def real_chain(params_policy, initial_state, num_steps):
     action_lst = []
     state_lst = []
     reward_lst = []
+    state_value = initial_state
 
     for i in range(num_steps):
-        action = compute_action(params_policystate_value)
-        env.render()
+        action = compute_action(state_value)
+        # env.render()
         state, reward, done, info = env.step(action)
         action_lst.append(action)
         state_lst.append(state)
@@ -137,6 +140,15 @@ def real_chain(params_policy, initial_state, num_steps):
 
 
 #=======
+
+action_list, state_list, reward_list = real_chain(initial_state, 20)
+
+print 'action list ', action_list
+print 'state_list, ', state_list
+print 'rewrd_list, ', reward_list
+
+
+#for i in range(num_steps):
 
 
 initial_state_sim = T.matrix()
