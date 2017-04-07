@@ -79,13 +79,6 @@ def envsim_network(p,state,action):
 
     return next_state, reward
 
-def real_chain(params_policy, initial_state):
-
-    action_lst = []
-    state_lst = []
-    reward_lst = []
-
-    return action_lst, state_lst, reward_lst
 
 def net_simulated_chain(params_envsim, params_policy, initial_state, num_steps):
 
@@ -103,12 +96,36 @@ def net_simulated_chain(params_envsim, params_policy, initial_state, num_steps):
 
     return reward_lst
 
-params_policy = OrderedDict()
-params_envsim  = OrderedDict()
+params_policy = init_params_policy({})
+params_envsim  = init_params_envsim({})
+
+env = gym.make('Pendulum-v0')
+intiial_state = env.reset()
+
+pction = theano.function([state, tparams_policy],[next_action])
+compute_action = theano.function([params_policy, state][action])
+
+def real_chain(params_policy, initial_state, num_steps):
+
+    # sample action from the policy network
+    # pass the action to the simulator network
+
+    action_lst = []
+    state_lst = []
+    reward_lst = []
+
+    for i in range(num_steps):
+        action = compute_action(params_policystate_value)
+        env.render()
+        state, reward, done, info = env.step(action)
+        action_lst.append(action)
+        state_lst.append(state)
+        reward_lst.append(reward)
+
+    return action_lst, state_lst, reward_lst
+
 
 #<<<<<<< HEAD
-#params_policy = init_params_policy({params_policy})
-#params_envsim = init_params_envsim({params_envsim})
 
 #tstate = T.matrix()
 #taction = T.matrix()
@@ -118,11 +135,10 @@ params_envsim  = OrderedDict()
 
 #next_state, reward = envsim_network(params_envsim, state, action)
 
-#env = gym.make('Pendulum-v0')
-#state_value = env.reset()
 
-#compute_action = theano.function([state, tparams_policy],[next_action])
 #=======
+
+
 initial_state_sim = T.matrix()
 
 simulated_reward_lst = net_simulated_chain(params_envsim, params_policy, initial_state_sim,num_steps_simulated_chain)
@@ -165,10 +181,5 @@ for iteration in range(0,50000):
 
     if iteration % 500 == 1:
         print iteration, simulated_reward
-#>>>>>>> ae763bc96cfd00636c4f87e1be8eb7b21708026b
 
 
-for i_episode in range(100):
-    # sample action from the policy network
-    # pass the action to the simulator network
-    action_ = compute_action(state_value, params_policy)
