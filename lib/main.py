@@ -113,9 +113,25 @@ simulation_function = theano.function(inputs=[initial_state_sim],outputs=[simula
 state = T.matrix()
 action = T.matrix()
 
-next_action = policy_network(params_policy, state)
+#next_action = policy_network(params_policy, state)
 
-next_state, reward = envsim_network(params_envsim, state, action)
+#next_state, reward = envsim_network(params_envsim, state, action)
+
+########################################################################
+#Build method for training the environment simulator
+########################################################################
+last_state_envtr = T.matrix()
+action_envtr = T.matrix()
+next_state_envtr = T.matrix()
+reward_envtr = T.matrix()
+
+next_state_pred, next_reward_pred = envsim_network(params_envsim, last_state_envtr, action_envtr)
+
+envtr_loss = T.mean((next_state_pred - next_state_envtr)**2) + T.mean((next_reward_pred - reward_envtr)**2)
+
+envtr_updates = lasagne.updates.adam(envtr_loss, params_envsim.values())
+
+train_envsim = theano.function(inputs = [last_state_envtr,action_envtr,next_state_envtr,reward_envtr], outputs = [envtr_loss], updates = envtr_updates)
 
 for iteration in range(0,50000): 
 
