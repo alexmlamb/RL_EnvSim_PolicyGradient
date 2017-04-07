@@ -1,10 +1,8 @@
-import sys
 import os
 import argparse
 import logging
 import cPickle
 import numpy as np
-import experiment as exp
 
 import gym
 
