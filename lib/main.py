@@ -11,6 +11,9 @@ import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer
 from utils import init_tparams, join2, srng, dropout, inverse_sigmoid
+import lasagne
+import numpy.random as rng
+import numpy as np
 
 from collections import OrderedDict
 import gym
@@ -24,6 +27,8 @@ state_size = 1
 reward_size = 1
 nfp = 512
 nfe = 512
+num_steps_simulated_chain = 20
+mb = 64
 
 #state -> action
 def init_params_policy(p):
@@ -82,30 +87,85 @@ def real_chain(params_policy, initial_state):
 
     return action_lst, state_lst, reward_lst
 
-def simulated_chain(params_envsim, params_policy, initial_state):
+def net_simulated_chain(params_envsim, params_policy, initial_state, num_steps):
 
 
-    reward_lst = []
+    initial_reward = theano.shared(np.zeros(shape=(mb,1)).astype('float32'))
+
+    def one_step(last_state,last_reward):
+
+        next_action = policy_network(params_policy, initial_state)
+        next_state, next_reward = envsim_network(params_envsim, last_state, next_action)
+        
+        return next_state, next_reward
+
+    [state_lst, reward_lst], _ = theano.scan(fn=one_step,outputs_info=[initial_state, initial_reward],n_steps=num_steps)
+
     return reward_lst
 
 params_policy = OrderedDict()
 params_envsim  = OrderedDict()
 
-params_policy = init_params_policy({params_policy})
-params_envsim = init_params_envsim({params_envsim})
+#<<<<<<< HEAD
+#params_policy = init_params_policy({params_policy})
+#params_envsim = init_params_envsim({params_envsim})
 
-tstate = T.matrix()
-taction = T.matrix()
+#tstate = T.matrix()
+#taction = T.matrix()
 
 
-next_action = policy_network(params_policy, state)
+#next_action = policy_network(params_policy, state)
 
-next_state, reward = envsim_network(params_envsim, state, action)
+#next_state, reward = envsim_network(params_envsim, state, action)
 
-env = gym.make('Pendulum-v0')
-state_value = env.reset()
+#env = gym.make('Pendulum-v0')
+#state_value = env.reset()
 
-compute_action = theano.function([state, tparams_policy],[next_action])
+#compute_action = theano.function([state, tparams_policy],[next_action])
+#=======
+initial_state_sim = T.matrix()
+
+simulated_reward_lst = net_simulated_chain(params_envsim, params_policy, initial_state_sim,num_steps_simulated_chain)
+
+simulated_total_reward = T.sum(simulated_reward_lst)
+simulation_loss = -1.0 * simulated_total_reward
+
+simulation_updates = lasagne.updates.adam(simulation_loss, params_policy.values())
+
+simulation_function = theano.function(inputs=[initial_state_sim],outputs=[simulated_total_reward],updates=simulation_updates)
+
+state = T.matrix()
+action = T.matrix()
+
+#next_action = policy_network(params_policy, state)
+
+#next_state, reward = envsim_network(params_envsim, state, action)
+
+########################################################################
+#Build method for training the environment simulator
+########################################################################
+last_state_envtr = T.matrix()
+action_envtr = T.matrix()
+next_state_envtr = T.matrix()
+reward_envtr = T.matrix()
+
+next_state_pred, next_reward_pred = envsim_network(params_envsim, last_state_envtr, action_envtr)
+
+envtr_loss = T.mean((next_state_pred - next_state_envtr)**2) + T.mean((next_reward_pred - reward_envtr)**2)
+
+envtr_updates = lasagne.updates.adam(envtr_loss, params_envsim.values())
+
+train_envsim = theano.function(inputs = [last_state_envtr,action_envtr,next_state_envtr,reward_envtr], outputs = [envtr_loss], updates = envtr_updates)
+
+for iteration in range(0,50000): 
+
+    initial_state_sim = rng.normal(size = (64, state_size)).astype('float32')
+
+    simulated_reward = simulation_function(initial_state_sim)
+
+    if iteration % 500 == 1:
+        print iteration, simulated_reward
+#>>>>>>> ae763bc96cfd00636c4f87e1be8eb7b21708026b
 
 
 for i_episode in range(100):
