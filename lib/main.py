@@ -59,15 +59,15 @@ def policy_network(p,state):
 
     inp = state
 
-    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='pn_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=True)
+    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='pn_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='pn_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=True)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='pn_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
 
     action_mu = fflayer(tparams=p,state_below=h2,options={},prefix='pn_3_mu',activ='lambda x: x',batch_norm=False)
 
     action_sigma = fflayer(tparams=p,state_below=h2,options={},prefix='pn_3_sigma',activ='lambda x: x',batch_norm=False)
 
-    action = T.tanh(action_mu) + 0.0 * T.nnet.sigmoid(action_sigma)# * srng.normal(size=action_sigma.shape)
+    action = action_mu + action_sigma#T.tanh(action_mu) + 1.0 * T.tanh(action_sigma)# * srng.normal(size=action_sigma.shape)
 
     return action
 
@@ -75,9 +75,9 @@ def envsim_network(p,state,action):
 
     inp = join2(state,action)
 
-    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='es_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=True)
+    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='es_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='es_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=True)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='es_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
 
     next_state = fflayer(tparams=p,state_below=h2,options={},prefix='es_state',activ='lambda x: x',batch_norm=False)
 
@@ -93,7 +93,7 @@ def net_simulated_chain(params_envsim, params_policy, initial_state, num_steps):
 
     def one_step(last_state,last_reward):
 
-        next_action = policy_network(params_policy, initial_state)
+        next_action = policy_network(params_policy, last_state)
         next_state, next_reward = envsim_network(params_envsim, last_state, next_action)
         
         return next_state, next_reward
@@ -127,7 +127,7 @@ def real_chain(init_state,policy_noise, num_steps):
         action = compute_action(last_state)
         # env.render()
         action = action.reshape((action_size))
-        action += policy_noise*rng.normal(size=action.shape).astype('float32')
+        action = action + policy_noise*rng.normal(size=action.shape).astype('float32')
         state, reward, done, info = env.step(action)
         state = state.reshape((1,state_size)).astype('float32')
         reward = reward.reshape((1,reward_size)).astype('float32')
@@ -168,9 +168,11 @@ simulation_loss = -1.0 * simulated_total_reward
 
 reward_delta = (simulated_reward_lst[-1] - simulated_reward_lst[0]).mean()
 
-simulation_updates = lasagne.updates.rmsprop(simulation_loss, params_policy.values(), learning_rate=0.00001)
+simulation_updates = lasagne.updates.sgd(simulation_loss, params_policy.values(), learning_rate=0.0001)
 
-simulation_function = theano.function(inputs=[initial_state_sim],outputs=[simulated_total_reward, simulation_loss,reward_delta],updates=simulation_updates)
+policy_grad = T.sum(T.grad(simulation_loss, params_policy.values()[0]))
+
+simulation_function = theano.function(inputs=[initial_state_sim],outputs=[simulated_total_reward, simulation_loss,reward_delta, policy_grad],updates=simulation_updates)
 
 #next_state_real, rewards_real = envsim_network(params_envism, state, action)
 
@@ -221,7 +223,7 @@ for iteration in range(0,50000):
     action_set = []
     state_set = []
     reward_set = []
-    policy_noise = 0.1
+    policy_noise = 1.0
     for i in range(mb):
         init_state = env.reset().astype(np.float32)
         action_list, state_list, reward_list = real_chain(init_state, policy_noise, ns)
@@ -241,7 +243,7 @@ for iteration in range(0,50000):
         loss,next_state_pred,next_reward_pred = train_envsim(state_set[i], action_set[i], state_set[i+1], reward_set[i])
         loss_list.append(loss)
 
-        if iteration % 1000 == 1:
+        if iteration % 100 == 1:
             print "==========================="
             print "step", i
             print "last state", state_set[i][0]
@@ -259,9 +261,9 @@ for iteration in range(0,50000):
     #need to get some real initial states
 
     if loss_val < 0.01: 
-        initial_state_sim = state_set[0]
-        simulated_reward, simulated_loss,reward_delta = simulation_function(initial_state_sim)
-
+        for j in range(0,100):
+            initial_state_sim = state_set[0]
+            simulated_reward, simulated_loss,reward_delta,policy_grad = simulation_function(initial_state_sim)
     if iteration % 100 == 1:
         print "real loss", simulated_loss
         print "reward delta", reward_delta
