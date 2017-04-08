@@ -2,6 +2,7 @@ import theano
 from theano import tensor
 import numpy
 from utils import ortho_weight , norm_weight, init_tparams #uniform_weight
+import theano.tensor as T
 
 import settings
 profile = settings.profile
