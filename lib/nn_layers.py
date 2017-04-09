@@ -80,7 +80,7 @@ def fflayer(tparams,
     if batch_norm:
         preactivation = (preactivation - preactivation.mean(axis=0)) / (0.0001 + preactivation.std(axis=0))
     if layer_norm:
-        preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0000001 + preactivation.std(axis=1,keepdims=True))
+        preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.01 + preactivation.std(axis=1,keepdims=True))
     if mean_bn:
         preactivation = (preactivation - preactivation.mean(axis=0)) + tparams[prefix + '_b']
     if mean_ln:

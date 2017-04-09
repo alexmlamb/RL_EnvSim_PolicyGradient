@@ -16,6 +16,7 @@ from utils import init_tparams, join2, srng, dropout, inverse_sigmoid
 import lasagne
 import numpy.random as rng
 import numpy as np
+import matplotlib.pyplot as plt
 
 from collections import OrderedDict
 import gym
@@ -29,7 +30,7 @@ state_size = 3
 reward_size = 1
 nfp = 128
 nfe = 128
-ns = 1
+ns = 10
 mb = 64
 simulated_reward = simulated_loss = -999
 
@@ -59,9 +60,9 @@ def policy_network(p,state):
 
     inp = state
 
-    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='pn_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
+    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='pn_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=True)
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='pn_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='pn_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=False)
 
     action_mu = fflayer(tparams=p,state_below=h2,options={},prefix='pn_3_mu',activ='lambda x: x',batch_norm=False)
 
@@ -75,9 +76,9 @@ def envsim_network(p,state,action):
 
     inp = join2(state,action)
 
-    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='es_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
+    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='es_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=True)
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='es_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='es_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',layer_norm=True)
 
     next_state = fflayer(tparams=p,state_below=h2,options={},prefix='es_state',activ='lambda x: x',batch_norm=False)
 
@@ -220,6 +221,9 @@ train_envsim = theano.function(inputs = [last_state_envtr,action_envtr,next_stat
 
 run_envsim = theano.function(inputs = [last_state_envtr,action_envtr], outputs = [next_reward_pred, T.grad(T.sum(next_reward_pred),last_state_envtr),T.grad(T.sum(next_reward_pred),action_envtr)])
 
+all_loss_lst = []
+all_expreward_lst = []
+
 for iteration in range(0,50000): 
     loss_list = []
     
@@ -246,7 +250,7 @@ for iteration in range(0,50000):
         loss,next_state_pred,next_reward_pred,state_grad,action_grad = train_envsim(state_set[i], action_set[i], state_set[i+1], reward_set[i])
         loss_list.append(loss)
 
-        if iteration % 100 == 1:
+        if False and iteration % 100 == 1:
             print "==========================="
             print "step", i
             print "last state", state_set[i][0]
@@ -260,22 +264,31 @@ for iteration in range(0,50000):
             
 
     loss_val = np.array(loss_list).mean()
+    all_loss_lst.append(loss_val)
 
-    if iteration % 100 == 1:
+    if iteration % 10 == 1:
         print 'loss_list ', iteration, loss_val
 
     #need to get some real initial states
 
     if loss_val < 0.2: 
-        for j in range(0,100000):
-            initial_state_sim = state_set[0]
+        initial_state_sim = state_set[0]
 
-            simulated_reward, simulated_loss,reward_delta,policy_grad = simulation_function(initial_state_sim)
-            if j % 100 == 1:
-                print "simulated loss", j, simulated_loss
-                print "policy grad", policy_grad
-    if iteration % 100 == 1:
-        print "real loss", simulated_loss
-        print "reward delta", reward_delta
+        simulated_reward, simulated_loss,reward_delta,policy_grad = simulation_function(initial_state_sim)
+        all_expreward_lst.append(simulated_reward)
+        if iteration % 10 == 1:
+            print "simulated loss", simulated_loss
+            print "policy grad", policy_grad
+    
+        if iteration % 5000 == 0:
+            plt.plot(all_loss_lst)
+            plt.title("Environment Simulator Loss over number of iterations")
+            plt.show()
+
+            plt.plot(all_expreward_lst)
+            plt.title("Expected Reward over number of policy gradient iterations")
+            plt.show()
+
+
 
 
