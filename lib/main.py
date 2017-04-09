@@ -29,7 +29,7 @@ state_size = 3
 reward_size = 1
 nfp = 128
 nfe = 128
-ns = 3
+ns = 1
 mb = 64
 simulated_reward = simulated_loss = -999
 
@@ -118,17 +118,19 @@ def real_chain(init_state,policy_noise, num_steps):
     # pass the action to the simulator network
 
     action_lst = []
-    state_lst = []
     reward_lst = []
 
     last_state = init_state.reshape((1, state_size))
+
+    state_lst = [last_state]
 
     for i in range(num_steps):
         action = compute_action(last_state)
         # env.render()
         action = action.reshape((action_size))
-        action = action + policy_noise*rng.normal(size=action.shape).astype('float32')
+        action = action*0.0 + rng.uniform(-7.0, 7.0,size=action.shape).astype('float32')
         state, reward, done, info = env.step(action)
+        
         state = state.reshape((1,state_size)).astype('float32')
         reward = reward.reshape((1,reward_size)).astype('float32')
         action_lst.append(action)
@@ -168,7 +170,7 @@ simulation_loss = -1.0 * simulated_total_reward
 
 reward_delta = (simulated_reward_lst[-1] - simulated_reward_lst[0]).mean()
 
-simulation_updates = lasagne.updates.sgd(simulation_loss, params_policy.values(), learning_rate=0.0001)
+simulation_updates = lasagne.updates.adam(simulation_loss, params_policy.values(), learning_rate=0.0001)
 
 policy_grad = T.sum(T.grad(simulation_loss, params_policy.values()[0]))
 
@@ -214,8 +216,9 @@ envtr_loss = T.mean(T.sqr(next_state_pred - next_state_envtr)) + T.mean(T.sqr(ne
 
 envtr_updates = lasagne.updates.adam(envtr_loss, params_envsim.values(), learning_rate=0.0001,beta1=0.5)
 
-train_envsim = theano.function(inputs = [last_state_envtr,action_envtr,next_state_envtr,reward_envtr], outputs = [envtr_loss,next_state_pred,next_reward_pred], updates = envtr_updates)
+train_envsim = theano.function(inputs = [last_state_envtr,action_envtr,next_state_envtr,reward_envtr], outputs = [envtr_loss,next_state_pred,next_reward_pred,T.grad(T.sum(next_reward_pred),last_state_envtr),T.grad(T.sum(next_reward_pred),action_envtr)], updates = envtr_updates)
 
+run_envsim = theano.function(inputs = [last_state_envtr,action_envtr], outputs = [next_reward_pred, T.grad(T.sum(next_reward_pred),last_state_envtr),T.grad(T.sum(next_reward_pred),action_envtr)])
 
 for iteration in range(0,50000): 
     loss_list = []
@@ -223,7 +226,7 @@ for iteration in range(0,50000):
     action_set = []
     state_set = []
     reward_set = []
-    policy_noise = 1.0
+    policy_noise = 0.1
     for i in range(mb):
         init_state = env.reset().astype(np.float32)
         action_list, state_list, reward_list = real_chain(init_state, policy_noise, ns)
@@ -232,15 +235,15 @@ for iteration in range(0,50000):
         reward_set.append(reward_list)
 
     action_set = np.array(action_set).transpose(1,0,2).reshape((ns,64,action_size))
-    state_set = np.array(state_set).transpose(1,0,2,3).reshape((ns,64,state_size))
+    state_set = np.array(state_set).transpose(1,0,2,3).reshape((ns+1,64,state_size))
     reward_set = np.array(reward_set).transpose(1,0,2,3).reshape((ns,64,reward_size))
 
     #print 'action_list ', action_list
     #print 'state_list ', state_list
     #print 'reward_list ', reward_list
-    for i in range(ns - 1):
+    for i in range(ns):
         
-        loss,next_state_pred,next_reward_pred = train_envsim(state_set[i], action_set[i], state_set[i+1], reward_set[i])
+        loss,next_state_pred,next_reward_pred,state_grad,action_grad = train_envsim(state_set[i], action_set[i], state_set[i+1], reward_set[i])
         loss_list.append(loss)
 
         if iteration % 100 == 1:
@@ -252,6 +255,9 @@ for iteration in range(0,50000):
             print "reward true", reward_set[i][0]
             print "next state pred", next_state_pred[0]
             print "next reward pred", next_reward_pred[0]
+            print "state grad", state_grad.round(2)
+            print "action grad", action_grad.round(2)
+            
 
     loss_val = np.array(loss_list).mean()
 
@@ -260,10 +266,14 @@ for iteration in range(0,50000):
 
     #need to get some real initial states
 
-    if loss_val < 0.01: 
-        for j in range(0,100):
+    if loss_val < 0.2: 
+        for j in range(0,100000):
             initial_state_sim = state_set[0]
+
             simulated_reward, simulated_loss,reward_delta,policy_grad = simulation_function(initial_state_sim)
+            if j % 100 == 1:
+                print "simulated loss", j, simulated_loss
+                print "policy grad", policy_grad
     if iteration % 100 == 1:
         print "real loss", simulated_loss
         print "reward delta", reward_delta
